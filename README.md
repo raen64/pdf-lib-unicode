@@ -27,8 +27,9 @@ npm install github:raen64/pdf-lib-unicode @pdf-lib/fontkit
 import { PDFDocument } from '@raen64/pdf-lib-unicode';
 import fontkit from '@pdf-lib/fontkit';
 
-// Load a Unicode-compatible font (e.g., Noto Sans from Google Fonts)
-const fontBytes = await fetch('/fonts/NotoSans-Regular.ttf').then(r => r.arrayBuffer());
+// Load a Unicode-compatible font from CDN (or use your own)
+const fontUrl = 'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf';
+const fontBytes = await fetch(fontUrl).then(r => r.arrayBuffer());
 
 // Create document with unicodeFont option
 const pdfDoc = await PDFDocument.create({ unicodeFont: fontBytes });
@@ -227,11 +228,75 @@ field.setText('Zażółć gęślą jaźń');
 | Custom font for forms | Manual embedding | `setUnicodeFont()` API |
 | fontkit | Optional | Required for Unicode features |
 
+## Browser Usage (UMD)
+
+For browser environments without a bundler, use the UMD build:
+
+```html
+<!-- Load pdf-lib UMD bundle -->
+<script src="node_modules/@raen64/pdf-lib-unicode/dist/pdf-lib.js"></script>
+<!-- Or from your own server -->
+<script src="/path/to/pdf-lib.js"></script>
+
+<!-- Load fontkit -->
+<script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+
+<script>
+  async function createPDF() {
+    const { PDFDocument, rgb } = PDFLib;
+
+    // Load font from CDN
+    const fontUrl = 'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Bold.ttf';
+    const fontBytes = await fetch(fontUrl).then(r => r.arrayBuffer());
+
+    // Create PDF with Unicode support
+    const pdfDoc = await PDFDocument.create({ unicodeFont: fontBytes });
+    pdfDoc.registerFontkit(fontkit);
+
+    const form = await pdfDoc.getFormAsync();
+    const font = form.getDefaultFont();
+
+    const page = pdfDoc.addPage([600, 400]);
+    page.drawText('Zażółć gęślą jaźń', {
+      x: 50, y: 350, size: 24, font, color: rgb(0, 0, 0)
+    });
+
+    // Create form field with Polish text
+    const nameField = form.createTextField('name');
+    nameField.setText('Stanisław Wyspiański');
+    nameField.addToPage(page, { x: 50, y: 250, width: 300, height: 30 });
+
+    const pdfBytes = await pdfDoc.save();
+
+    // Download or display the PDF
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    window.open(url);
+  }
+</script>
+```
+
 ## Recommended Fonts
 
-For Unicode support, we recommend [Noto Sans](https://fonts.google.com/noto/specimen/Noto+Sans) from Google Fonts. It's free, open source, and supports a wide range of characters.
+Any TrueType (.ttf) or OpenType (.otf) font that includes the characters you need will work. We recommend [Noto Sans](https://fonts.google.com/noto/specimen/Noto+Sans) from Google Fonts - it's free, open source, and supports a wide range of characters.
 
-Download from: https://fonts.google.com/noto/specimen/Noto+Sans
+**CDN URLs for Noto Sans:**
+
+```javascript
+// Regular
+const regular = 'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf';
+
+// Bold
+const bold = 'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Bold.ttf';
+
+// Italic
+const italic = 'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Italic.ttf';
+
+// Bold Italic
+const boldItalic = 'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-BoldItalic.ttf';
+```
+
+Or download directly from: https://fonts.google.com/noto/specimen/Noto+Sans
 
 ## Compatibility
 
