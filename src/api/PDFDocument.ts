@@ -238,6 +238,24 @@ export default class PDFDocument {
   }
 
   /**
+   * Check if fontkit has been registered with this document.
+   * Fontkit is required for embedding custom fonts (non-standard fonts).
+   *
+   * For example:
+   * ```js
+   * if (pdfDoc.isRegisteredFontkit()) {
+   *   // Custom fonts can be embedded
+   *   const customFont = await pdfDoc.embedFont(fontBytes)
+   * }
+   * ```
+   *
+   * @returns true if fontkit is registered, false otherwise.
+   */
+  isRegisteredFontkit(): boolean {
+    return this.fontkit !== undefined;
+  }
+
+  /**
    * Get the [[PDFForm]] containing all interactive fields for this document.
    * For example:
    * ```js

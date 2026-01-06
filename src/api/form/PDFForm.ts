@@ -42,9 +42,21 @@ import {
   PDFWidgetAnnotation,
 } from 'src/core';
 import { assertIs, Cache, assertOrUndefined } from 'src/utils';
+import { getBundledUnicodeFontBytes } from 'src/fonts';
 
 export interface FlattenOptions {
   updateFieldAppearances: boolean;
+}
+
+export interface DefaultFontOptions {
+  /**
+   * If true, automatically use a bundled Unicode font (Noto Sans) that supports
+   * European diacritics and other non-ASCII characters.
+   * Requires fontkit to be registered via PDFDocument.registerFontkit().
+   *
+   * @default false
+   */
+  useUnicodeFont?: boolean;
 }
 
 /**
@@ -80,6 +92,8 @@ export default class PDFForm {
 
   private readonly dirtyFields: Set<PDFRef>;
   private readonly defaultFontCache: Cache<PDFFont>;
+  private customDefaultFont: PDFFont | undefined;
+  private unicodeFontPromise: Promise<PDFFont> | undefined;
 
   private constructor(acroForm: PDFAcroForm, doc: PDFDocument) {
     assertIs(acroForm, 'acroForm', [[PDFAcroForm, 'PDFAcroForm']]);
@@ -694,8 +708,108 @@ export default class PDFForm {
     return this.dirtyFields.has(fieldRef);
   }
 
-  getDefaultFont() {
+  /**
+   * Get the default font used for form field appearances.
+   * Returns the custom font if set, otherwise the standard Helvetica font.
+   */
+  getDefaultFont(): PDFFont {
+    if (this.customDefaultFont) {
+      return this.customDefaultFont;
+    }
     return this.defaultFontCache.access();
+  }
+
+  /**
+   * Set a custom font to be used as the default font for form field appearances.
+   * This font will be used instead of Helvetica when rendering text in form fields.
+   *
+   * Use this to enable support for characters outside the WinAnsi character set,
+   * such as Polish diacritics (ą, ę, ł, etc.), Cyrillic, Greek, and more.
+   *
+   * For example:
+   * ```js
+   * import fontkit from '@pdf-lib/fontkit'
+   *
+   * // Register fontkit to enable custom font embedding
+   * pdfDoc.registerFontkit(fontkit)
+   *
+   * // Embed a Unicode-compatible font
+   * const notoSansBytes = fs.readFileSync('NotoSans-Regular.ttf')
+   * const unicodeFont = await pdfDoc.embedFont(notoSansBytes)
+   *
+   * // Set as the default font for form fields
+   * const form = pdfDoc.getForm()
+   * form.setDefaultFont(unicodeFont)
+   *
+   * // Now form fields can contain Polish text
+   * const textField = form.getTextField('name')
+   * textField.setText('Zażółć gęślą jaźń') // Works!
+   * ```
+   *
+   * @param font The font to use as the default for form fields.
+   */
+  setDefaultFont(font: PDFFont): void {
+    assertIs(font, 'font', [[PDFFont, 'PDFFont']]);
+    this.customDefaultFont = font;
+  }
+
+  /**
+   * Enable automatic use of a bundled Unicode font (Noto Sans) for form fields.
+   * This provides out-of-the-box support for European diacritics and other
+   * non-ASCII characters without requiring manual font embedding.
+   *
+   * **IMPORTANT:** You must register fontkit before calling this method:
+   * ```js
+   * import fontkit from '@pdf-lib/fontkit'
+   * pdfDoc.registerFontkit(fontkit)
+   * ```
+   *
+   * For example:
+   * ```js
+   * import fontkit from '@pdf-lib/fontkit'
+   *
+   * pdfDoc.registerFontkit(fontkit)
+   * const form = pdfDoc.getForm()
+   * await form.enableUnicodeFont()
+   *
+   * // Now form fields support Polish, Czech, etc.
+   * const textField = form.getTextField('name')
+   * textField.setText('Příliš žluťoučký kůň')
+   * ```
+   *
+   * @returns Promise that resolves when the Unicode font is ready.
+   * @throws Error if fontkit is not registered.
+   */
+  async enableUnicodeFont(): Promise<void> {
+    if (!this.doc.isRegisteredFontkit()) {
+      throw new Error(
+        'You must call pdfDoc.registerFontkit(fontkit) before enabling Unicode font support. ' +
+          'Install @pdf-lib/fontkit: npm install @pdf-lib/fontkit',
+      );
+    }
+
+    // Avoid re-embedding if already enabled
+    if (this.unicodeFontPromise) {
+      await this.unicodeFontPromise;
+      return;
+    }
+
+    this.unicodeFontPromise = (async () => {
+      const fontBytes = await getBundledUnicodeFontBytes();
+      const font = await this.doc.embedFont(fontBytes);
+      this.customDefaultFont = font;
+      return font;
+    })();
+
+    await this.unicodeFontPromise;
+  }
+
+  /**
+   * Check if Unicode font support is enabled for this form.
+   * @returns true if a custom Unicode font has been set.
+   */
+  hasUnicodeFont(): boolean {
+    return this.customDefaultFont !== undefined;
   }
 
   private findWidgetPage(widget: PDFWidgetAnnotation): PDFPage {
