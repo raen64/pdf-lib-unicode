@@ -42,21 +42,23 @@ import {
   PDFWidgetAnnotation,
 } from 'src/core';
 import { assertIs, Cache, assertOrUndefined } from 'src/utils';
-import { getBundledUnicodeFontBytes } from 'src/fonts';
 
 export interface FlattenOptions {
   updateFieldAppearances: boolean;
 }
 
-export interface DefaultFontOptions {
+export interface SetUnicodeFontOptions {
   /**
-   * If true, automatically use a bundled Unicode font (Noto Sans) that supports
-   * European diacritics and other non-ASCII characters.
-   * Requires fontkit to be registered via PDFDocument.registerFontkit().
+   * If true, automatically update the font on all existing form fields
+   * to use the Unicode font. This is useful when loading existing PDFs
+   * with form fields that need to display Unicode characters.
+   *
+   * Note: This will change the appearance of existing fields and may
+   * affect their visual layout since different fonts have different metrics.
    *
    * @default false
    */
-  useUnicodeFont?: boolean;
+  updateExistingFields?: boolean;
 }
 
 /**
@@ -754,9 +756,8 @@ export default class PDFForm {
   }
 
   /**
-   * Enable automatic use of a bundled Unicode font (Noto Sans) for form fields.
-   * This provides out-of-the-box support for European diacritics and other
-   * non-ASCII characters without requiring manual font embedding.
+   * Set a Unicode font for form fields using the provided font bytes.
+   * This enables support for European diacritics and other non-ASCII characters.
    *
    * **IMPORTANT:** You must register fontkit before calling this method:
    * ```js
@@ -768,40 +769,89 @@ export default class PDFForm {
    * ```js
    * import fontkit from '@pdf-lib/fontkit'
    *
+   * // Load your preferred Unicode font
+   * const fontBytes = await fetch('/fonts/NotoSans-Regular.ttf').then(r => r.arrayBuffer())
+   *
    * pdfDoc.registerFontkit(fontkit)
    * const form = pdfDoc.getForm()
-   * await form.enableUnicodeFont()
+   * await form.setUnicodeFont(fontBytes)
    *
    * // Now form fields support Polish, Czech, etc.
    * const textField = form.getTextField('name')
    * textField.setText('Příliš žluťoučký kůň')
    * ```
    *
+   * You can also update existing form fields loaded from a PDF:
+   * ```js
+   * const fontBytes = await fetch('/fonts/NotoSans-Regular.ttf').then(r => r.arrayBuffer())
+   * const pdfDoc = await PDFDocument.load(existingPdfBytes)
+   * pdfDoc.registerFontkit(fontkit)
+   * const form = pdfDoc.getForm()
+   * await form.setUnicodeFont(fontBytes, { updateExistingFields: true })
+   *
+   * // Existing fields now use Unicode font
+   * const nameField = form.getTextField('name')
+   * nameField.setText('Świętojańska')
+   * ```
+   *
+   * @param fontBytes The font file bytes (TTF or OTF format).
+   * @param options Options for setting the Unicode font.
+   * @param options.updateExistingFields If true, update all existing form fields
+   *        to use the Unicode font. This is useful when loading existing PDFs.
    * @returns Promise that resolves when the Unicode font is ready.
    * @throws Error if fontkit is not registered.
    */
-  async enableUnicodeFont(): Promise<void> {
+  async setUnicodeFont(
+    fontBytes: ArrayBuffer | Uint8Array,
+    options?: SetUnicodeFontOptions,
+  ): Promise<void> {
     if (!this.doc.isRegisteredFontkit()) {
       throw new Error(
-        'You must call pdfDoc.registerFontkit(fontkit) before enabling Unicode font support. ' +
+        'You must call pdfDoc.registerFontkit(fontkit) before setting a Unicode font. ' +
           'Install @pdf-lib/fontkit: npm install @pdf-lib/fontkit',
       );
     }
 
+    const updateExistingFields = options?.updateExistingFields ?? false;
+
     // Avoid re-embedding if already enabled
     if (this.unicodeFontPromise) {
-      await this.unicodeFontPromise;
+      const font = await this.unicodeFontPromise;
+      // If we already have the font but now want to update existing fields
+      if (updateExistingFields) {
+        this.updateExistingFieldFonts(font);
+      }
       return;
     }
 
     this.unicodeFontPromise = (async () => {
-      const fontBytes = await getBundledUnicodeFontBytes();
       const font = await this.doc.embedFont(fontBytes);
       this.customDefaultFont = font;
       return font;
     })();
 
-    await this.unicodeFontPromise;
+    const font = await this.unicodeFontPromise;
+
+    // Update existing fields if requested
+    if (updateExistingFields) {
+      this.updateExistingFieldFonts(font);
+    }
+  }
+
+  /**
+   * Update all existing form fields to use the specified font.
+   * This marks all fields as dirty so their appearances will be regenerated.
+   * @param font The font to use for all existing fields.
+   */
+  private updateExistingFieldFonts(font: PDFFont): void {
+    const fields = this.getFields();
+    for (let idx = 0, len = fields.length; idx < len; idx++) {
+      const field = fields[idx];
+      // Mark field as dirty to force appearance update
+      this.markFieldAsDirty(field.ref);
+    }
+    // Update all field appearances with the new font
+    this.updateFieldAppearances(font);
   }
 
   /**

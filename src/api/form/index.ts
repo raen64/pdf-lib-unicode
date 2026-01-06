@@ -6,7 +6,7 @@ export { default as PDFField } from 'src/api/form/PDFField';
 export {
   default as PDFForm,
   FlattenOptions,
-  DefaultFontOptions,
+  SetUnicodeFontOptions,
 } from 'src/api/form/PDFForm';
 export { default as PDFOptionList } from 'src/api/form/PDFOptionList';
 export { default as PDFRadioGroup } from 'src/api/form/PDFRadioGroup';

@@ -264,6 +264,28 @@ export default class PDFField {
     );
   }
 
+  /**
+   * Update this field's appearance to use the specified font.
+   * This is useful for enabling Unicode character support on individual fields.
+   *
+   * For example:
+   * ```js
+   * const unicodeFont = await pdfDoc.embedFont(fontBytes)
+   * const field = form.getTextField('name')
+   * field.setFont(unicodeFont)
+   * field.setText('Zażółć gęślą jaźń')
+   * ```
+   *
+   * This method marks the field as dirty and updates its appearance immediately.
+   *
+   * @param font The font to use for this field's appearance.
+   */
+  setFont(font: PDFFont): void {
+    assertIs(font, 'font', [[PDFFont, 'PDFFont']]);
+    this.markAsDirty();
+    this.defaultUpdateAppearances(font);
+  }
+
   protected markAsDirty() {
     this.doc.getForm().markFieldAsDirty(this.ref);
   }

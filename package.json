@@ -32,11 +32,7 @@
     "Ching Chang (https://github.com/ChingChang9)"
   ],
   "scripts": {
-    "release:latest": "yarn publish --tag latest && yarn pack && yarn release:tag",
-    "release:next": "yarn publish --tag next",
-    "release:prep": "yarn clean && yarn lint && yarn typecheck && yarn test && yarn build",
-    "release:tag": "TAG=\"v$(yarn --silent get:version)\" && git tag $TAG && git push origin $TAG",
-    "get:version": "node --eval 'console.log(require(`./package.json`).version)'",
+    "prepare": "npm run build",
     "clean": "rimraf ts3.4 build cjs dist es scratchpad/build coverage tsBuildInfo.json apps/node-build apps/node/tsBuildInfo.json isolate*.log flamegraph.html out.pdf",
     "typecheck": "tsc --noEmit --incremental false --tsBuildInfoFile null",
     "test": "jest --config jest.json --runInBand",

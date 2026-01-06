@@ -133,6 +133,8 @@ export default class PDFDocument {
       throwOnInvalidObject = false,
       updateMetadata = true,
       capNumbers = false,
+      unicodeFont,
+      updateExistingFields = false,
     } = options;
 
     assertIs(pdf, 'pdf', ['string', Uint8Array, ArrayBuffer]);
@@ -147,7 +149,10 @@ export default class PDFDocument {
       throwOnInvalidObject,
       capNumbers,
     ).parseDocument();
-    return new PDFDocument(context, ignoreEncryption, updateMetadata);
+    return new PDFDocument(context, ignoreEncryption, updateMetadata, {
+      unicodeFont,
+      updateExistingFields,
+    });
   }
 
   /**
@@ -155,7 +160,7 @@ export default class PDFDocument {
    * @returns Resolves with the newly created document.
    */
   static async create(options: CreateOptions = {}) {
-    const { updateMetadata = true } = options;
+    const { updateMetadata = true, unicodeFont } = options;
 
     const context = PDFContext.create();
     const pageTree = PDFPageTree.withContext(context);
@@ -163,7 +168,10 @@ export default class PDFDocument {
     const catalog = PDFCatalog.withContextAndPages(context, pageTreeRef);
     context.trailerInfo.Root = context.register(catalog);
 
-    return new PDFDocument(context, false, updateMetadata);
+    return new PDFDocument(context, false, updateMetadata, {
+      unicodeFont,
+      updateExistingFields: false,
+    });
   }
 
   /** The low-level context of this document. */
@@ -188,11 +196,20 @@ export default class PDFDocument {
   private readonly embeddedPages: PDFEmbeddedPage[];
   private readonly embeddedFiles: PDFEmbeddedFile[];
   private readonly javaScripts: PDFJavaScript[];
+  private readonly unicodeFontBytes?: ArrayBuffer | Uint8Array;
+  private readonly updateExistingFieldsOnUnicode: boolean;
+  private unicodeFontInitialized: boolean = false;
 
   private constructor(
     context: PDFContext,
     ignoreEncryption: boolean,
     updateMetadata: boolean,
+    unicodeOptions: {
+      unicodeFont?: ArrayBuffer | Uint8Array;
+      updateExistingFields: boolean;
+    } = {
+      updateExistingFields: false,
+    },
   ) {
     assertIs(context, 'context', [[PDFContext, 'PDFContext']]);
     assertIs(ignoreEncryption, 'ignoreEncryption', ['boolean']);
@@ -209,6 +226,8 @@ export default class PDFDocument {
     this.embeddedPages = [];
     this.embeddedFiles = [];
     this.javaScripts = [];
+    this.unicodeFontBytes = unicodeOptions.unicodeFont;
+    this.updateExistingFieldsOnUnicode = unicodeOptions.updateExistingFields;
 
     if (!ignoreEncryption && this.isEncrypted) throw new EncryptedPDFError();
 
@@ -267,6 +286,11 @@ export default class PDFDocument {
    *   console.log(`${type}: ${name}`)
    * })
    * ```
+   *
+   * **Note:** If this document was created with `{ unicodeFont: bytes }`, you should
+   * use [[PDFDocument.getFormAsync]] instead to ensure the Unicode font is
+   * properly initialized before using form fields.
+   *
    * @returns The form for this document.
    */
   getForm(): PDFForm {
@@ -277,6 +301,53 @@ export default class PDFDocument {
       );
       form.deleteXFA();
     }
+    return form;
+  }
+
+  /**
+   * Get the [[PDFForm]] containing all interactive fields for this document,
+   * with automatic Unicode font initialization if enabled.
+   *
+   * This is the recommended way to get the form when working with documents
+   * created with `{ unicodeFont: bytes }`. It ensures the Unicode font is properly
+   * loaded before you start working with form fields.
+   *
+   * For example:
+   * ```js
+   * import fontkit from '@pdf-lib/fontkit'
+   *
+   * const fontBytes = await fetch('/fonts/NotoSans-Regular.ttf').then(r => r.arrayBuffer())
+   * const pdfDoc = await PDFDocument.create({ unicodeFont: fontBytes })
+   * pdfDoc.registerFontkit(fontkit)
+   *
+   * // Use getFormAsync to auto-initialize Unicode font
+   * const form = await pdfDoc.getFormAsync()
+   *
+   * // Now form fields support Polish, Czech, etc.
+   * const textField = form.createTextField('name')
+   * textField.setText('Zażółć gęślą jaźń')
+   * ```
+   *
+   * @returns Promise that resolves with the form for this document.
+   */
+  async getFormAsync(): Promise<PDFForm> {
+    const form = this.getForm();
+
+    // Auto-enable Unicode font if font bytes were provided
+    if (this.unicodeFontBytes && !this.unicodeFontInitialized) {
+      if (!this.isRegisteredFontkit()) {
+        throw new Error(
+          'Unicode font was provided but fontkit is not registered. ' +
+            'Call pdfDoc.registerFontkit(fontkit) before using form fields. ' +
+            'Install @pdf-lib/fontkit: npm install @pdf-lib/fontkit',
+        );
+      }
+      await form.setUnicodeFont(this.unicodeFontBytes, {
+        updateExistingFields: this.updateExistingFieldsOnUnicode,
+      });
+      this.unicodeFontInitialized = true;
+    }
+
     return form;
   }
 
